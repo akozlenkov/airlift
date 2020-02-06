@@ -26,6 +26,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.UncheckedIOException;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Locale;
 import java.util.Map;
@@ -33,8 +34,6 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Handler;
 import java.util.logging.LogManager;
-
-import static com.google.common.collect.Maps.fromProperties;
 
 /**
  * Initializes the logging subsystem.
@@ -136,8 +135,38 @@ public class Logging
             properties.load(inputStream);
         }
 
-        fromProperties(properties).forEach((loggerName, value) ->
-                setLevel(loggerName, Level.valueOf(value.toUpperCase(Locale.US))));
+        ArrayList<String> extraHandlersNames = new ArrayList<>();
+        if (properties.containsKey("handlers")) {
+            for (String handler : properties.getProperty("handlers").split(",")) {
+                try {
+                    ROOT.addHandler((Handler) Class.forName(handler).getConstructor().newInstance());
+                    extraHandlersNames.add(handler);
+                }
+                catch (ReflectiveOperationException e) {
+                    log.error(e);
+                }
+            }
+        }
+
+        for (Map.Entry<Object, Object> property : properties.entrySet()) {
+            if (property.getKey().equals("handlers")) {
+                continue;
+            }
+
+            String level = property.getValue().toString().toUpperCase(Locale.US);
+            if (extraHandlersNames.contains(property.getKey())) {
+                String handlerName = property.getKey().toString();
+                for (Handler handler : ROOT.getHandlers()) {
+                    if (handler.getClass().getName().equals(handlerName)) {
+                        handler.setLevel(java.util.logging.Level.parse(level));
+                    }
+                }
+            }
+            else {
+                String loggerName = property.getKey().toString();
+                setLevel(loggerName, Level.valueOf(level));
+            }
+        }
     }
 
     public Level getLevel(String loggerName)
